@@ -1,0 +1,9 @@
+input_list1 = [10, -5, 12]
+input_list2 = [6, -8, 3]
+
+# Print positive numbers from each list
+print("Input list 1:", input_list1)
+print_positive_numbers(input_list1)
+
+print("\nInput list 2:", input_list2)
+print_positive_numbers(input_list2)
