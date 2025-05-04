@@ -1,0 +1,29 @@
+def fibonacci(n):
+    """
+    Generate Fibonacci sequence up to the nth term.
+    
+    Args:
+        n: Number of Fibonacci terms to generate
+        
+    Returns:
+        A list containing the Fibonacci sequence
+    """
+    # Initialize the sequence with the first two numbers
+    fib_sequence = [0, 1]
+    
+    # Generate subsequent Fibonacci numbers
+    for i in range(2, n):
+        next_number = fib_sequence[i-1] + fib_sequence[i-2]
+        fib_sequence.append(next_number)
+    
+    return fib_sequence
+
+# Example usage
+if __name__ == "__main__":
+    num_terms = 10
+    result = fibonacci(num_terms)
+    print(f"The first {num_terms} Fibonacci numbers are:")
+    print(result)
+    print("\nSequence:")
+    for i, num in enumerate(result):
+        print(f"F({i}) = {num}")
