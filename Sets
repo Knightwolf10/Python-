@@ -1,0 +1,45 @@
+def calculate_set_operations(set1, set2):
+    """
+    Calculate and return the union and intersection of two sets.
+    
+    Args:
+        set1: First set
+        set2: Second set
+    
+    Returns:
+        tuple: (union, intersection)
+    """
+    # Calculate union
+    union_set = set1.union(set2)
+    # Alternative: union_set = set1 | set2
+    
+    # Calculate intersection
+    intersection_set = set1.intersection(set2)
+    # Alternative: intersection_set = set1 & set2
+    
+    return union_set, intersection_set
+
+
+# Example usage
+if __name__ == "__main__":
+    # Example 1: Sets of integers
+    A = {1, 2, 3, 4, 5}
+    B = {4, 5, 6, 7, 8}
+    
+    union, intersection = calculate_set_operations(A, B)
+    
+    print(f"Set A: {A}")
+    print(f"Set B: {B}")
+    print(f"Union (A ∪ B): {union}")
+    print(f"Intersection (A ∩ B): {intersection}")
+    
+    # Example 2: Sets of strings
+    C = {"apple", "banana", "cherry"}
+    D = {"cherry", "dragonfruit", "banana"}
+    
+    union, intersection = calculate_set_operations(C, D)
+    
+    print("\nSet C:", C)
+    print("Set D:", D)
+    print("Union (C ∪ D):", union)
+    print("Intersection (C ∩ D):", intersection)
