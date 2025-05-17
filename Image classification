@@ -1,0 +1,139 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from skimage import io, transform, color
+from skimage.feature import hog
+import os
+
+def load_and_preprocess_images(folder1, folder2, size=(64, 64), max_images=10):
+    """Load and preprocess images from two folders."""
+    images = []
+    labels = []
+    
+    # Load images from first folder (class 0)
+    for i, filename in enumerate(os.listdir(folder1)):
+        if i >= max_images:  # Limit number of images per class
+            break
+        if filename.endswith(('.jpg', '.jpeg', '.png')):
+            try:
+                img_path = os.path.join(folder1, filename)
+                img = io.imread(img_path)
+                img = transform.resize(img, size)
+                images.append(img)
+                labels.append(0)  # Class 0
+            except:
+                print(f"Error loading {filename}")
+    
+    # Load images from second folder (class 1)
+    for i, filename in enumerate(os.listdir(folder2)):
+        if i >= max_images:  # Limit number of images per class
+            break
+        if filename.endswith(('.jpg', '.jpeg', '.png')):
+            try:
+                img_path = os.path.join(folder2, filename)
+                img = io.imread(img_path)
+                img = transform.resize(img, size)
+                images.append(img)
+                labels.append(1)  # Class 1
+            except:
+                print(f"Error loading {filename}")
+    
+    return np.array(images), np.array(labels)
+
+def extract_simple_features(images):
+    """Extract HOG features from images."""
+    features = []
+    
+    for image in images:
+        # Convert to grayscale if the image is RGB
+        if len(image.shape) > 2 and image.shape[2] > 1:
+            gray = color.rgb2gray(image)
+        else:
+            gray = image
+            
+        # Extract HOG features with simplified parameters
+        feature_vector = hog(gray, orientations=8, pixels_per_cell=(16, 16),
+                            cells_per_block=(1, 1))
+        features.append(feature_vector)
+    
+    return np.array(features)
+
+def classify_images(folder1, folder2, class1_name="Class 1", class2_name="Class 2"):
+    """Complete image classification pipeline."""
+    print(f"Loading images from {folder1} and {folder2}...")
+    images, labels = load_and_preprocess_images(folder1, folder2)
+    
+    print(f"Loaded {len(images)} images: {np.sum(labels == 0)} {class1_name} and {np.sum(labels == 1)} {class2_name}")
+    
+    # Extract features
+    print("Extracting features...")
+    features = extract_simple_features(images)
+    
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(
+        features, labels, test_size=0.3, random_state=42)
+    
+    # Train a Random Forest with fewer trees for simplicity
+    print("Training Random Forest classifier...")
+    model = RandomForestClassifier(n_estimators=50, random_state=42)
+    model.fit(X_train, y_train)
+    
+    # Make predictions
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"Accuracy: {accuracy:.2f}")
+    
+    # Display a few test images with predictions
+    display_results(images, labels, model, features, 
+                   class_names=[class1_name, class2_name])
+    
+    return model
+
+def display_results(images, labels, model, features, class_names, num_samples=3):
+    """Display some sample images with their predictions."""
+    plt.figure(figsize=(12, 4))
+    
+    # Find indices of both classes
+    class0_indices = np.where(labels == 0)[0]
+    class1_indices = np.where(labels == 1)[0]
+    
+    # Randomly select samples from each class
+    np.random.seed(42)
+    if len(class0_indices) >= num_samples and len(class1_indices) >= num_samples:
+        sample_indices = np.concatenate([
+            np.random.choice(class0_indices, num_samples, replace=False),
+            np.random.choice(class1_indices, num_samples, replace=False)
+        ])
+        
+        # Display each sample with its prediction
+        for i, idx in enumerate(sample_indices):
+            plt.subplot(2, num_samples, i + 1)
+            plt.imshow(images[idx])
+            plt.axis('off')
+            
+            # Predict the class
+            feature = features[idx].reshape(1, -1)
+            pred = model.predict(feature)[0]
+            true_label = labels[idx]
+            
+            color = 'green' if pred == true_label else 'red'
+            plt.title(f"True: {class_names[true_label]}\nPred: {class_names[pred]}", 
+                      color=color)
+        
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("Not enough samples to display results")
+
+# Example usage
+if __name__ == "__main__":
+    # Replace with your image folder paths
+    cats_folder = "/storage/emulated/0/Documents/dataset/cat/cat1.jpg"
+    dogs_folder = "/storage/emulated/0/Documents/dataset/dog/dog1.jpeg"
+    
+    # Train the model and classify images
+    model = classify_images(cats_folder, dogs_folder, "Cat", "Dog")
+    
+    print("Done!")
