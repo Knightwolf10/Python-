@@ -1,0 +1,199 @@
+import numpy as np
+import pandas as pd
+from sklearn.datasets import load_iris, load_wine
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def load_and_explore_data(dataset_name='iris'):
+    """Load and explore the dataset"""
+    if dataset_name == 'iris':
+        data = load_iris()
+        df = pd.DataFrame(data.data, columns=data.feature_names)
+        df['target'] = data.target
+        df['species'] = df['target'].map({0: 'setosa', 1: 'versicolor', 2: 'virginica'})
+    elif dataset_name == 'wine':
+        data = load_wine()
+        df = pd.DataFrame(data.data, columns=data.feature_names)
+        df['target'] = data.target
+        df['wine_class'] = df['target'].map({0: 'class_0', 1: 'class_1', 2: 'class_2'})
+    
+    print(f"Dataset: {dataset_name.upper()}")
+    print(f"Shape: {df.shape}")
+    print(f"Features: {data.feature_names[:5]}...")  # Show first 5 features
+    print(f"Target classes: {np.unique(data.target)}")
+    print(f"Class distribution:\n{df['target'].value_counts()}")
+    print("\nFirst few rows:")
+    print(df.head())
+    
+    return data.data, data.target, data.feature_names, data.target_names
+
+def train_classifiers(X_train, X_test, y_train, y_test):
+    """Train multiple classifiers and compare performance"""
+    
+    # Initialize classifiers
+    classifiers = {
+        'Logistic Regression': LogisticRegression(random_state=42, max_iter=200),
+        'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42),
+        'SVM': SVC(random_state=42),
+        'K-Nearest Neighbors': KNeighborsClassifier(n_neighbors=5)
+    }
+    
+    results = {}
+    
+    print("\n" + "="*60)
+    print("CLASSIFICATION RESULTS")
+    print("="*60)
+    
+    for name, clf in classifiers.items():
+        # Train the classifier
+        clf.fit(X_train, y_train)
+        
+        # Make predictions
+        y_pred = clf.predict(X_test)
+        
+        # Calculate accuracy
+        accuracy = accuracy_score(y_test, y_pred)
+        
+        # Cross-validation score
+        cv_scores = cross_val_score(clf, X_train, y_train, cv=5)
+        
+        results[name] = {
+            'accuracy': accuracy,
+            'cv_mean': cv_scores.mean(),
+            'cv_std': cv_scores.std(),
+            'predictions': y_pred
+        }
+        
+        print(f"\n{name}:")
+        print(f"  Test Accuracy: {accuracy:.4f}")
+        print(f"  CV Score: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
+    
+    return results, classifiers
+
+def plot_results(results):
+    """Plot comparison of classifier performance"""
+    names = list(results.keys())
+    accuracies = [results[name]['accuracy'] for name in names]
+    cv_means = [results[name]['cv_mean'] for name in names]
+    cv_stds = [results[name]['cv_std'] for name in names]
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    
+    # Test accuracy comparison
+    bars1 = ax1.bar(names, accuracies, color='skyblue', alpha=0.7)
+    ax1.set_title('Test Accuracy Comparison')
+    ax1.set_ylabel('Accuracy')
+    ax1.set_ylim(0, 1)
+    ax1.tick_params(axis='x', rotation=45)
+    
+    # Add value labels on bars
+    for bar, acc in zip(bars1, accuracies):
+        ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01, 
+                f'{acc:.3f}', ha='center', va='bottom')
+    
+    # Cross-validation scores with error bars
+    bars2 = ax2.bar(names, cv_means, yerr=cv_stds, color='lightcoral', 
+                    alpha=0.7, capsize=5)
+    ax2.set_title('Cross-Validation Scores')
+    ax2.set_ylabel('CV Accuracy')
+    ax2.set_ylim(0, 1)
+    ax2.tick_params(axis='x', rotation=45)
+    
+    # Add value labels on bars
+    for bar, mean in zip(bars2, cv_means):
+        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01, 
+                f'{mean:.3f}', ha='center', va='bottom')
+    
+    plt.tight_layout()
+    plt.show()
+
+def detailed_analysis(X_test, y_test, results, classifiers, target_names):
+    """Provide detailed analysis for the best performing classifier"""
+    
+    # Find best classifier based on test accuracy
+    best_name = max(results.keys(), key=lambda x: results[x]['accuracy'])
+    best_clf = classifiers[best_name]
+    best_pred = results[best_name]['predictions']
+    
+    print(f"\n" + "="*60)
+    print(f"DETAILED ANALYSIS - BEST CLASSIFIER: {best_name}")
+    print("="*60)
+    
+    # Classification report
+    print("\nClassification Report:")
+    print(classification_report(y_test, best_pred, target_names=target_names))
+    
+    # Confusion matrix
+    cm = confusion_matrix(y_test, best_pred)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=target_names, yticklabels=target_names)
+    plt.title(f'Confusion Matrix - {best_name}')
+    plt.ylabel('True Label')
+    plt.xlabel('Predicted Label')
+    plt.show()
+    
+    return best_name, best_clf
+
+def main():
+    """Main function to run the classification pipeline"""
+    
+    print("SIMPLE DATASET CLASSIFICATION")
+    print("="*50)
+    
+    # Choose dataset (you can change this to 'wine' for wine dataset)
+    dataset_choice = 'iris'  # or 'wine'
+    
+    # Load and explore data
+    X, y, feature_names, target_names = load_and_explore_data(dataset_choice)
+    
+    # Split the data
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42, stratify=y
+    )
+    
+    # Scale the features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    print(f"\nTraining set size: {X_train.shape[0]}")
+    print(f"Test set size: {X_test.shape[0]}")
+    
+    # Train classifiers and get results
+    results, classifiers = train_classifiers(X_train_scaled, X_test_scaled, y_train, y_test)
+    
+    # Plot results
+    plot_results(results)
+    
+    # Detailed analysis of best classifier
+    best_name, best_clf = detailed_analysis(X_test_scaled, y_test, results, 
+                                          classifiers, target_names)
+    
+    # Feature importance (if available)
+    if hasattr(best_clf, 'feature_importances_'):
+        print(f"\nFeature Importance ({best_name}):")
+        feature_importance = pd.DataFrame({
+            'feature': feature_names,
+            'importance': best_clf.feature_importances_
+        }).sort_values('importance', ascending=False)
+        
+        print(feature_importance.head(10))
+        
+        # Plot feature importance
+        plt.figure(figsize=(10, 6))
+        sns.barplot(data=feature_importance.head(10), x='importance', y='feature')
+        plt.title(f'Top 10 Feature Importance - {best_name}')
+        plt.xlabel('Importance')
+        plt.tight_layout()
+        plt.show()
+
+if __name__ == "__main__":
+    main()
