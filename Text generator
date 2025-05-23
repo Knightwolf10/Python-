@@ -1,0 +1,360 @@
+import random
+import re
+import numpy as np
+from collections import defaultdict, Counter
+import pickle
+import os
+
+class MarkovTextGenerator:
+    """Simple Markov Chain text generator"""
+    
+    def __init__(self, order=2):
+        self.order = order
+        self.chains = defaultdict(list)
+        self.beginnings = []
+    
+    def train(self, text):
+        """Train the Markov chain on input text"""
+        # Clean and tokenize text
+        words = self._tokenize(text)
+        
+        # Store sentence beginnings
+        sentences = re.split(r'[.!?]+', text)
+        for sentence in sentences:
+            sentence_words = self._tokenize(sentence)
+            if len(sentence_words) >= self.order:
+                self.beginnings.append(tuple(sentence_words[:self.order]))
+        
+        # Build chains
+        for i in range(len(words) - self.order):
+            key = tuple(words[i:i + self.order])
+            next_word = words[i + self.order]
+            self.chains[key].append(next_word)
+    
+    def _tokenize(self, text):
+        """Simple tokenization"""
+        # Convert to lowercase and split into words
+        words = re.findall(r'\b\w+\b|[.!?]', text.lower())
+        return [word for word in words if word.strip()]
+    
+    def generate(self, length=50, seed=None):
+        """Generate text using the Markov chain"""
+        if not self.chains:
+            return "Model not trained yet!"
+        
+        if seed:
+            # Use provided seed
+            current = tuple(seed.lower().split()[:self.order])
+            if current not in self.chains:
+                current = random.choice(list(self.chains.keys()))
+        else:
+            # Start with a random beginning or random chain
+            if self.beginnings:
+                current = random.choice(self.beginnings)
+            else:
+                current = random.choice(list(self.chains.keys()))
+        
+        result = list(current)
+        
+        for _ in range(length - self.order):
+            if current in self.chains:
+                next_word = random.choice(self.chains[current])
+                result.append(next_word)
+                current = tuple(result[-self.order:])
+            else:
+                # If we hit a dead end, start fresh
+                if self.beginnings:
+                    current = random.choice(self.beginnings)
+                else:
+                    current = random.choice(list(self.chains.keys()))
+                result.extend(current)
+        
+        return ' '.join(result)
+
+class NGramTextGenerator:
+    """N-gram based text generator with probability weights"""
+    
+    def __init__(self, n=3):
+        self.n = n
+        self.ngrams = defaultdict(Counter)
+        self.vocab = set()
+    
+    def train(self, text):
+        """Train on input text"""
+        words = self._tokenize(text)
+        self.vocab.update(words)
+        
+        # Create n-grams
+        for i in range(len(words) - self.n + 1):
+            gram = tuple(words[i:i + self.n])
+            context = gram[:-1]
+            next_word = gram[-1]
+            self.ngrams[context][next_word] += 1
+    
+    def _tokenize(self, text):
+        """Tokenize text"""
+        # Add sentence markers
+        sentences = re.split(r'[.!?]+', text)
+        words = []
+        for sentence in sentences:
+            sentence_words = re.findall(r'\b\w+\b', sentence.lower())
+            if sentence_words:
+                words.extend(['<START>'] + sentence_words + ['<END>'])
+        return words
+    
+    def generate(self, length=50, temperature=1.0):
+        """Generate text with temperature control"""
+        if not self.ngrams:
+            return "Model not trained yet!"
+        
+        # Start with a context that begins with <START>
+        contexts = [ctx for ctx in self.ngrams.keys() if ctx[0] == '<START>']
+        if not contexts:
+            contexts = list(self.ngrams.keys())
+        
+        current_context = random.choice(contexts)
+        result = list(current_context)
+        
+        for _ in range(length):
+            if current_context in self.ngrams:
+                # Get next word with temperature
+                candidates = self.ngrams[current_context]
+                next_word = self._sample_with_temperature(candidates, temperature)
+                
+                if next_word == '<END>':
+                    break
+                
+                result.append(next_word)
+                current_context = tuple(result[-(self.n-1):])
+            else:
+                break
+        
+        # Clean up output
+        text = ' '.join(word for word in result if word not in ['<START>', '<END>'])
+        return text
+    
+    def _sample_with_temperature(self, candidates, temperature):
+        """Sample next word with temperature control"""
+        words = list(candidates.keys())
+        counts = np.array(list(candidates.values()), dtype=float)
+        
+        if temperature == 0:
+            return words[np.argmax(counts)]
+        
+        # Apply temperature
+        logits = np.log(counts) / temperature
+        exp_logits = np.exp(logits - np.max(logits))  # Numerical stability
+        probabilities = exp_logits / np.sum(exp_logits)
+        
+        return np.random.choice(words, p=probabilities)
+
+class CharacterRNN:
+    """Simple character-level RNN text generator"""
+    
+    def __init__(self, seq_length=40):
+        self.seq_length = seq_length
+        self.char_to_idx = {}
+        self.idx_to_char = {}
+        self.vocab_size = 0
+        self.model_trained = False
+    
+    def prepare_data(self, text):
+        """Prepare character-level data"""
+        chars = sorted(list(set(text)))
+        self.vocab_size = len(chars)
+        
+        self.char_to_idx = {ch: i for i, ch in enumerate(chars)}
+        self.idx_to_char = {i: ch for i, ch in enumerate(chars)}
+        
+        # Create training sequences
+        X, y = [], []
+        for i in range(len(text) - self.seq_length):
+            sequence = text[i:i + self.seq_length]
+            target = text[i + self.seq_length]
+            X.append([self.char_to_idx[ch] for ch in sequence])
+            y.append(self.char_to_idx[target])
+        
+        return np.array(X), np.array(y)
+    
+    def train_simple(self, text, epochs=10):
+        """Simple training using character frequency"""
+        self.char_frequencies = Counter(text)
+        self.chars = list(self.char_frequencies.keys())
+        self.weights = np.array(list(self.char_frequencies.values()), dtype=float)
+        self.weights = self.weights / np.sum(self.weights)
+        self.model_trained = True
+        print(f"Trained on {len(text)} characters with {len(self.chars)} unique characters")
+    
+    def generate(self, length=100, temperature=1.0, seed=""):
+        """Generate text character by character"""
+        if not self.model_trained:
+            return "Model not trained yet!"
+        
+        result = seed
+        
+        for _ in range(length):
+            # Simple approach: sample based on character frequencies
+            if temperature == 0:
+                next_char = self.chars[np.argmax(self.weights)]
+            else:
+                # Apply temperature to weights
+                temp_weights = np.power(self.weights, 1/temperature)
+                temp_weights = temp_weights / np.sum(temp_weights)
+                next_char = np.random.choice(self.chars, p=temp_weights)
+            
+            result += next_char
+        
+        return result
+
+class TextGeneratorSuite:
+    """Main class that combines all text generators"""
+    
+    def __init__(self):
+        self.markov_gen = MarkovTextGenerator(order=2)
+        self.ngram_gen = NGramTextGenerator(n=3)
+        self.char_gen = CharacterRNN()
+        self.training_text = ""
+    
+    def load_sample_data(self):
+        """Load sample text data"""
+        sample_texts = [
+            """
+            The quick brown fox jumps over the lazy dog. The dog was sleeping peacefully under the tree.
+            In the morning, the sun rises from the east and sets in the west. Birds sing beautiful songs.
+            Technology has changed the way we live and work. Artificial intelligence is becoming more sophisticated.
+            The ocean waves crash against the rocky shore. Seagulls fly overhead searching for food.
+            Mountains stand tall against the blue sky. Rivers flow down from the peaks to the valleys below.
+            """,
+            """
+            Once upon a time, in a land far away, there lived a brave knight who sought adventure.
+            The kingdom was peaceful, but danger lurked in the dark forests beyond the castle walls.
+            Magic existed in this realm, and wizards cast spells to protect the innocent people.
+            Dragons soared through the clouds, their scales glinting in the sunlight.
+            The princess was known for her wisdom and kindness throughout the land.
+            """,
+            """
+            Science and technology continue to advance at an incredible pace in the modern world.
+            Researchers work tirelessly to solve complex problems and make new discoveries.
+            Innovation drives progress and helps humanity overcome challenges.
+            The future holds great promise for breakthrough discoveries in medicine and space exploration.
+            Collaboration between scientists from different countries leads to remarkable achievements.
+            """
+        ]
+        return " ".join(sample_texts)
+    
+    def train_all_models(self, text=None):
+        """Train all text generation models"""
+        if text is None:
+            text = self.load_sample_data()
+        
+        self.training_text = text
+        
+        print("Training Markov Chain generator...")
+        self.markov_gen.train(text)
+        
+        print("Training N-gram generator...")
+        self.ngram_gen.train(text)
+        
+        print("Training Character RNN generator...")
+        self.char_gen.train_simple(text)
+        
+        print("All models trained successfully!")
+    
+    def generate_markov(self, length=50, seed=None):
+        """Generate text using Markov chain"""
+        return self.markov_gen.generate(length, seed)
+    
+    def generate_ngram(self, length=50, temperature=1.0):
+        """Generate text using N-gram model"""
+        return self.ngram_gen.generate(length, temperature)
+    
+    def generate_character(self, length=100, temperature=1.0, seed="The"):
+        """Generate text using character-level model"""
+        return self.char_gen.generate(length, temperature, seed)
+    
+    def compare_generators(self):
+        """Compare outputs from different generators"""
+        print("="*80)
+        print("TEXT GENERATOR COMPARISON")
+        print("="*80)
+        
+        print("\n1. MARKOV CHAIN GENERATOR:")
+        print("-" * 40)
+        markov_text = self.generate_markov(30)
+        print(markov_text)
+        
+        print("\n2. N-GRAM GENERATOR (Temperature=0.8):")
+        print("-" * 40)
+        ngram_text = self.generate_ngram(30, temperature=0.8)
+        print(ngram_text)
+        
+        print("\n3. N-GRAM GENERATOR (Temperature=1.5):")
+        print("-" * 40)
+        ngram_text_high = self.generate_ngram(30, temperature=1.5)
+        print(ngram_text_high)
+        
+        print("\n4. CHARACTER-LEVEL GENERATOR:")
+        print("-" * 40)
+        char_text = self.generate_character(100, temperature=0.8, seed="The ")
+        print(char_text)
+    
+    def interactive_mode(self):
+        """Interactive text generation"""
+        print("\n" + "="*60)
+        print("INTERACTIVE TEXT GENERATOR")
+        print("="*60)
+        print("Commands:")
+        print("1 - Markov Chain generation")
+        print("2 - N-gram generation")
+        print("3 - Character-level generation")
+        print("4 - Compare all generators")
+        print("q - Quit")
+        
+        while True:
+            choice = input("\nEnter your choice: ").strip().lower()
+            
+            if choice == 'q':
+                break
+            elif choice == '1':
+                length = int(input("Enter length (default 50): ") or 50)
+                seed = input("Enter seed word (optional): ") or None
+                print("\nGenerated text:")
+                print(self.generate_markov(length, seed))
+            elif choice == '2':
+                length = int(input("Enter length (default 50): ") or 50)
+                temp = float(input("Enter temperature 0.1-2.0 (default 1.0): ") or 1.0)
+                print("\nGenerated text:")
+                print(self.generate_ngram(length, temp))
+            elif choice == '3':
+                length = int(input("Enter length (default 100): ") or 100)
+                temp = float(input("Enter temperature 0.1-2.0 (default 1.0): ") or 1.0)
+                seed = input("Enter seed text (default 'The'): ") or "The"
+                print("\nGenerated text:")
+                print(self.generate_character(length, temp, seed))
+            elif choice == '4':
+                self.compare_generators()
+            else:
+                print("Invalid choice. Please try again.")
+
+def main():
+    """Main function to demonstrate text generation"""
+    
+    # Initialize the text generator suite
+    generator = TextGeneratorSuite()
+    
+    # Train all models
+    print("Initializing and training text generators...")
+    generator.train_all_models()
+    
+    # Show comparison
+    generator.compare_generators()
+    
+    # Optional: Enter interactive mode
+    use_interactive = input("\nEnter interactive mode? (y/n): ").strip().lower()
+    if use_interactive == 'y':
+        generator.interactive_mode()
+    
+    print("\nText generation demo completed!")
+
+if __name__ == "__main__":
+    main()
