@@ -1,0 +1,350 @@
+# Simple Dataset Classification
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.datasets import load_iris, load_wine, make_classification
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import warnings
+warnings.filterwarnings('ignore')
+
+class DatasetClassifier:
+    """A comprehensive dataset classifier with multiple algorithms"""
+    
+    def __init__(self):
+        self.models = {
+            'Logistic Regression': LogisticRegression(random_state=42),
+            'Decision Tree': DecisionTreeClassifier(random_state=42),
+            'Random Forest': RandomForestClassifier(random_state=42, n_estimators=100),
+            'SVM': SVC(random_state=42),
+            'K-Nearest Neighbors': KNeighborsClassifier(),
+            'Naive Bayes': GaussianNB()
+        }
+        self.scaler = StandardScaler()
+        self.results = {}
+    
+    def load_sample_data(self, dataset='iris'):
+        """Load sample datasets for demonstration"""
+        if dataset == 'iris':
+            data = load_iris()
+            df = pd.DataFrame(data.data, columns=data.feature_names)
+            df['target'] = data.target
+            df['target_names'] = [data.target_names[i] for i in data.target]
+            return df, data.feature_names, data.target_names
+        
+        elif dataset == 'wine':
+            data = load_wine()
+            df = pd.DataFrame(data.data, columns=data.feature_names)
+            df['target'] = data.target
+            df['target_names'] = [data.target_names[i] for i in data.target]
+            return df, data.feature_names, data.target_names
+        
+        elif dataset == 'synthetic':
+            X, y = make_classification(n_samples=1000, n_features=10, n_informative=5,
+                                     n_redundant=2, n_classes=3, random_state=42)
+            feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+            df = pd.DataFrame(X, columns=feature_names)
+            df['target'] = y
+            target_names = ['Class_0', 'Class_1', 'Class_2']
+            df['target_names'] = [target_names[i] for i in y]
+            return df, feature_names, target_names
+    
+    def explore_data(self, df, feature_names):
+        """Perform basic data exploration"""
+        print("="*60)
+        print("DATA EXPLORATION")
+        print("="*60)
+        
+        print(f"Dataset shape: {df.shape}")
+        print(f"Features: {len(feature_names)}")
+        print(f"Classes: {df['target'].nunique()}")
+        print()
+        
+        print("Class distribution:")
+        print(df['target_names'].value_counts())
+        print()
+        
+        print("First few rows:")
+        print(df.head())
+        print()
+        
+        print("Basic statistics:")
+        print(df[feature_names].describe())
+        print()
+        
+        # Check for missing values
+        missing_values = df.isnull().sum()
+        if missing_values.sum() > 0:
+            print("Missing values:")
+            print(missing_values[missing_values > 0])
+        else:
+            print("No missing values found.")
+        print()
+    
+    def visualize_data(self, df, feature_names, target_names):
+        """Create visualizations for the dataset"""
+        plt.figure(figsize=(15, 10))
+        
+        # Class distribution
+        plt.subplot(2, 3, 1)
+        df['target_names'].value_counts().plot(kind='bar')
+        plt.title('Class Distribution')
+        plt.xlabel('Classes')
+        plt.ylabel('Count')
+        plt.xticks(rotation=45)
+        
+        # Correlation heatmap (first 10 features if more than 10)
+        features_to_plot = feature_names[:10] if len(feature_names) > 10 else feature_names
+        plt.subplot(2, 3, 2)
+        correlation_matrix = df[features_to_plot].corr()
+        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
+        plt.title('Feature Correlation')
+        
+        # Feature distributions (first 4 features)
+        for i, feature in enumerate(features_to_plot[:4]):
+            plt.subplot(2, 3, i+3)
+            for target_name in target_names:
+                subset = df[df['target_names'] == target_name]
+                plt.hist(subset[feature], alpha=0.7, label=target_name, bins=20)
+            plt.title(f'{feature} Distribution')
+            plt.xlabel(feature)
+            plt.ylabel('Frequency')
+            plt.legend()
+        
+        plt.tight_layout()
+        plt.show()
+    
+    def preprocess_data(self, df, feature_names):
+        """Preprocess the data for classification"""
+        X = df[feature_names].values
+        y = df['target'].values
+        
+        # Split the data
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+        
+        # Scale the features
+        X_train_scaled = self.scaler.fit_transform(X_train)
+        X_test_scaled = self.scaler.transform(X_test)
+        
+        return X_train_scaled, X_test_scaled, y_train, y_test
+    
+    def train_models(self, X_train, X_test, y_train, y_test):
+        """Train multiple classification models"""
+        print("="*60)
+        print("MODEL TRAINING AND EVALUATION")
+        print("="*60)
+        
+        for name, model in self.models.items():
+            print(f"Training {name}...")
+            
+            # Train the model
+            model.fit(X_train, y_train)
+            
+            # Make predictions
+            y_pred = model.predict(X_test)
+            
+            # Calculate accuracy
+            accuracy = accuracy_score(y_test, y_pred)
+            
+            # Cross-validation score
+            cv_scores = cross_val_score(model, X_train, y_train, cv=5)
+            
+            # Store results
+            self.results[name] = {
+                'model': model,
+                'accuracy': accuracy,
+                'cv_mean': cv_scores.mean(),
+                'cv_std': cv_scores.std(),
+                'predictions': y_pred
+            }
+            
+            print(f"  Accuracy: {accuracy:.4f}")
+            print(f"  CV Score: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
+            print()
+    
+    def evaluate_models(self, y_test, target_names):
+        """Evaluate and compare all models"""
+        print("="*60)
+        print("MODEL COMPARISON")
+        print("="*60)
+        
+        # Create comparison DataFrame
+        comparison_data = []
+        for name, result in self.results.items():
+            comparison_data.append({
+                'Model': name,
+                'Test Accuracy': result['accuracy'],
+                'CV Mean': result['cv_mean'],
+                'CV Std': result['cv_std']
+            })
+        
+        comparison_df = pd.DataFrame(comparison_data)
+        comparison_df = comparison_df.sort_values('Test Accuracy', ascending=False)
+        print(comparison_df.to_string(index=False))
+        print()
+        
+        # Best model detailed report
+        best_model_name = comparison_df.iloc[0]['Model']
+        best_predictions = self.results[best_model_name]['predictions']
+        
+        print(f"Detailed Classification Report for Best Model ({best_model_name}):")
+        print("-" * 60)
+        print(classification_report(y_test, best_predictions, target_names=target_names))
+        
+        return best_model_name, comparison_df
+    
+    def plot_results(self, y_test, best_model_name, comparison_df, target_names):
+        """Plot model comparison and confusion matrix"""
+        plt.figure(figsize=(15, 5))
+        
+        # Model comparison
+        plt.subplot(1, 3, 1)
+        models = comparison_df['Model']
+        accuracies = comparison_df['Test Accuracy']
+        bars = plt.bar(range(len(models)), accuracies)
+        plt.xlabel('Models')
+        plt.ylabel('Test Accuracy')
+        plt.title('Model Comparison')
+        plt.xticks(range(len(models)), models, rotation=45, ha='right')
+        
+        # Add value labels on bars
+        for bar, acc in zip(bars, accuracies):
+            plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                    f'{acc:.3f}', ha='center', va='bottom')
+        
+        # Confusion matrix for best model
+        plt.subplot(1, 3, 2)
+        best_predictions = self.results[best_model_name]['predictions']
+        cm = confusion_matrix(y_test, best_predictions)
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                   xticklabels=target_names, yticklabels=target_names)
+        plt.title(f'Confusion Matrix - {best_model_name}')
+        plt.xlabel('Predicted')
+        plt.ylabel('Actual')
+        
+        # Cross-validation scores
+        plt.subplot(1, 3, 3)
+        cv_means = comparison_df['CV Mean']
+        cv_stds = comparison_df['CV Std']
+        plt.errorbar(range(len(models)), cv_means, yerr=cv_stds, fmt='o', capsize=5)
+        plt.xlabel('Models')
+        plt.ylabel('Cross-Validation Score')
+        plt.title('CV Scores with Standard Deviation')
+        plt.xticks(range(len(models)), models, rotation=45, ha='right')
+        
+        plt.tight_layout()
+        plt.show()
+    
+    def classify_dataset(self, dataset='iris', visualize=True):
+        """Complete classification pipeline"""
+        print("DATASET CLASSIFICATION PIPELINE")
+        print("="*60)
+        
+        # Load data
+        df, feature_names, target_names = self.load_sample_data(dataset)
+        
+        # Explore data
+        self.explore_data(df, feature_names)
+        
+        # Visualize data
+        if visualize:
+            self.visualize_data(df, feature_names, target_names)
+        
+        # Preprocess data
+        X_train, X_test, y_train, y_test = self.preprocess_data(df, feature_names)
+        
+        # Train models
+        self.train_models(X_train, X_test, y_train, y_test)
+        
+        # Evaluate models
+        best_model_name, comparison_df = self.evaluate_models(y_test, target_names)
+        
+        # Plot results
+        if visualize:
+            self.plot_results(y_test, best_model_name, comparison_df, target_names)
+        
+        return self.results, best_model_name
+
+# Example usage and demonstration
+def main():
+    """Main function to demonstrate the classification pipeline"""
+    
+    # Create classifier instance
+    classifier = DatasetClassifier()
+    
+    # Example 1: Iris dataset
+    print("EXAMPLE 1: IRIS DATASET")
+    print("="*60)
+    results_iris, best_model_iris = classifier.classify_dataset('iris')
+    
+    # Example 2: Wine dataset
+    print("\n\nEXAMPLE 2: WINE DATASET")
+    print("="*60)
+    classifier_wine = DatasetClassifier()
+    results_wine, best_model_wine = classifier_wine.classify_dataset('wine')
+    
+    # Example 3: Synthetic dataset
+    print("\n\nEXAMPLE 3: SYNTHETIC DATASET")
+    print("="*60)
+    classifier_synthetic = DatasetClassifier()
+    results_synthetic, best_model_synthetic = classifier_synthetic.classify_dataset('synthetic')
+
+# Function to classify custom dataset
+def classify_custom_dataset(file_path, target_column, feature_columns=None):
+    """
+    Classify a custom dataset from CSV file
+    
+    Args:
+        file_path: Path to CSV file
+        target_column: Name of target column
+        feature_columns: List of feature column names (if None, uses all except target)
+    """
+    try:
+        # Load custom data
+        df = pd.read_csv(file_path)
+        
+        if feature_columns is None:
+            feature_columns = [col for col in df.columns if col != target_column]
+        
+        # Encode target if it's categorical
+        if df[target_column].dtype == 'object':
+            le = LabelEncoder()
+            df['target'] = le.fit_transform(df[target_column])
+            target_names = le.classes_
+            df['target_names'] = df[target_column]
+        else:
+            df['target'] = df[target_column]
+            target_names = df[target_column].unique()
+            df['target_names'] = df[target_column].astype(str)
+        
+        # Create classifier and run pipeline
+        classifier = DatasetClassifier()
+        
+        # Manual pipeline for custom data
+        classifier.explore_data(df, feature_columns)
+        X_train, X_test, y_train, y_test = classifier.preprocess_data(df, feature_columns)
+        classifier.train_models(X_train, X_test, y_train, y_test)
+        best_model_name, comparison_df = classifier.evaluate_models(y_test, target_names)
+        
+        print(f"\nBest performing model: {best_model_name}")
+        return classifier.results, best_model_name
+        
+    except Exception as e:
+        print(f"Error processing custom dataset: {e}")
+        return None, None
+
+if __name__ == "__main__":
+    main()
+    
+    # Example of how to use with custom dataset (uncomment to use)
+    # results, best_model = classify_custom_dataset('your_dataset.csv', 'target_column')
