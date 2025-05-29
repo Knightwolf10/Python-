@@ -1,0 +1,465 @@
+# Image Classification using Random Forest Classifier
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.datasets import load_digits, fetch_olivetti_faces
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+import cv2
+import os
+from PIL import Image
+import pandas as pd
+from skimage import feature, filters, measure
+from skimage.feature import hog, local_binary_pattern
+import warnings
+warnings.filterwarnings('ignore')
+
+class ImageClassifierRF:
+    """Random Forest Image Classifier with multiple feature extraction methods"""
+    
+    def __init__(self, n_estimators=100, random_state=42):
+        self.rf_classifier = RandomForestClassifier(
+            n_estimators=n_estimators, 
+            random_state=random_state,
+            n_jobs=-1
+        )
+        self.scaler = StandardScaler()
+        self.pca = None
+        self.feature_method = 'pixel'
+        self.is_trained = False
+        
+    def extract_pixel_features(self, images):
+        """Extract raw pixel values as features"""
+        return images.reshape(images.shape[0], -1)
+    
+    def extract_hog_features(self, images):
+        """Extract Histogram of Oriented Gradients (HOG) features"""
+        hog_features = []
+        for image in images:
+            # Ensure image is 2D
+            if len(image.shape) == 1:
+                # Calculate square root to get image dimensions
+                size = int(np.sqrt(image.shape[0]))
+                image = image.reshape(size, size)
+            
+            # Extract HOG features
+            features = hog(image, orientations=9, pixels_per_cell=(8, 8),
+                          cells_per_block=(2, 2), visualize=False)
+            hog_features.append(features)
+        
+        return np.array(hog_features)
+    
+    def extract_lbp_features(self, images):
+        """Extract Local Binary Pattern (LBP) features"""
+        lbp_features = []
+        for image in images:
+            # Ensure image is 2D
+            if len(image.shape) == 1:
+                size = int(np.sqrt(image.shape[0]))
+                image = image.reshape(size, size)
+            
+            # Extract LBP features
+            radius = 3
+            n_points = 8 * radius
+            lbp = local_binary_pattern(image, n_points, radius, method='uniform')
+            
+            # Calculate histogram of LBP
+            n_bins = n_points + 2
+            hist, _ = np.histogram(lbp.ravel(), bins=n_bins, 
+                                 range=(0, n_bins), density=True)
+            lbp_features.append(hist)
+        
+        return np.array(lbp_features)
+    
+    def extract_statistical_features(self, images):
+        """Extract statistical features from images"""
+        statistical_features = []
+        for image in images:
+            # Ensure image is 2D
+            if len(image.shape) == 1:
+                size = int(np.sqrt(image.shape[0]))
+                image = image.reshape(size, size)
+            
+            features = [
+                np.mean(image),      # Mean
+                np.std(image),       # Standard deviation
+                np.min(image),       # Minimum
+                np.max(image),       # Maximum
+                np.median(image),    # Median
+                np.percentile(image, 25),  # 25th percentile
+                np.percentile(image, 75),  # 75th percentile
+                np.var(image),       # Variance
+            ]
+            statistical_features.append(features)
+        
+        return np.array(statistical_features)
+    
+    def extract_combined_features(self, images):
+        """Extract and combine multiple types of features"""
+        pixel_features = self.extract_pixel_features(images)
+        statistical_features = self.extract_statistical_features(images)
+        
+        # Use PCA to reduce pixel feature dimensions
+        if pixel_features.shape[1] > 100:
+            pca_pixels = PCA(n_components=100, random_state=42)
+            pixel_features = pca_pixels.fit_transform(pixel_features)
+        
+        # Combine features
+        combined_features = np.hstack([pixel_features, statistical_features])
+        return combined_features
+    
+    def extract_features(self, images, method='pixel'):
+        """Extract features based on specified method"""
+        self.feature_method = method
+        
+        if method == 'pixel':
+            return self.extract_pixel_features(images)
+        elif method == 'hog':
+            return self.extract_hog_features(images)
+        elif method == 'lbp':
+            return self.extract_lbp_features(images)
+        elif method == 'statistical':
+            return self.extract_statistical_features(images)
+        elif method == 'combined':
+            return self.extract_combined_features(images)
+        else:
+            raise ValueError("Method must be 'pixel', 'hog', 'lbp', 'statistical', or 'combined'")
+    
+    def train(self, X_train, y_train, feature_method='pixel', use_pca=False, n_components=None):
+        """Train the Random Forest classifier"""
+        print(f"Extracting {feature_method} features...")
+        X_train_features = self.extract_features(X_train, feature_method)
+        
+        # Apply PCA if requested
+        if use_pca and n_components:
+            print(f"Applying PCA with {n_components} components...")
+            self.pca = PCA(n_components=n_components, random_state=42)
+            X_train_features = self.pca.fit_transform(X_train_features)
+        
+        # Scale features
+        X_train_scaled = self.scaler.fit_transform(X_train_features)
+        
+        # Train the classifier
+        print("Training Random Forest classifier...")
+        self.rf_classifier.fit(X_train_scaled, y_train)
+        self.is_trained = True
+        
+        print(f"Training completed! Feature vector size: {X_train_features.shape[1]}")
+    
+    def predict(self, X_test):
+        """Make predictions on test data"""
+        if not self.is_trained:
+            raise ValueError("Model must be trained before making predictions")
+        
+        # Extract features using the same method as training
+        X_test_features = self.extract_features(X_test, self.feature_method)
+        
+        # Apply PCA if it was used during training
+        if self.pca:
+            X_test_features = self.pca.transform(X_test_features)
+        
+        # Scale features
+        X_test_scaled = self.scaler.transform(X_test_features)
+        
+        # Make predictions
+        predictions = self.rf_classifier.predict(X_test_scaled)
+        probabilities = self.rf_classifier.predict_proba(X_test_scaled)
+        
+        return predictions, probabilities
+    
+    def evaluate(self, X_test, y_test, class_names=None):
+        """Evaluate the classifier performance"""
+        predictions, probabilities = self.predict(X_test)
+        accuracy = accuracy_score(y_test, predictions)
+        
+        print(f"Accuracy: {accuracy:.4f}")
+        print("\nClassification Report:")
+        print(classification_report(y_test, predictions, target_names=class_names))
+        
+        return accuracy, predictions, probabilities
+    
+    def get_feature_importance(self, feature_names=None):
+        """Get feature importance from the trained Random Forest"""
+        if not self.is_trained:
+            raise ValueError("Model must be trained first")
+        
+        importances = self.rf_classifier.feature_importances_
+        if feature_names is None:
+            feature_names = [f'Feature_{i}' for i in range(len(importances))]
+        
+        # Create DataFrame for easier handling
+        importance_df = pd.DataFrame({
+            'feature': feature_names,
+            'importance': importances
+        }).sort_values('importance', ascending=False)
+        
+        return importance_df
+
+def load_sample_datasets():
+    """Load sample image datasets"""
+    datasets = {}
+    
+    # Load digits dataset (handwritten digits 0-9)
+    print("Loading digits dataset...")
+    digits = load_digits()
+    datasets['digits'] = {
+        'data': digits.data,
+        'images': digits.images,
+        'target': digits.target,
+        'target_names': [str(i) for i in range(10)],
+        'description': 'Handwritten digits (8x8 pixels)'
+    }
+    
+    # Load Olivetti faces dataset
+    print("Loading Olivetti faces dataset...")
+    try:
+        faces = fetch_olivetti_faces(shuffle=True, random_state=42)
+        datasets['faces'] = {
+            'data': faces.data,
+            'images': faces.images,
+            'target': faces.target,
+            'target_names': [f'Person_{i}' for i in range(40)],
+            'description': 'Olivetti faces (64x64 pixels, 40 people)'
+        }
+    except Exception as e:
+        print(f"Could not load Olivetti faces: {e}")
+    
+    return datasets
+
+def visualize_sample_images(dataset, n_samples=10):
+    """Visualize sample images from the dataset"""
+    images = dataset['images']
+    targets = dataset['target']
+    target_names = dataset['target_names']
+    
+    plt.figure(figsize=(15, 6))
+    for i in range(n_samples):
+        plt.subplot(2, 5, i + 1)
+        plt.imshow(images[i], cmap='gray')
+        plt.title(f'Class: {target_names[targets[i]]}')
+        plt.axis('off')
+    
+    plt.suptitle(f'Sample Images - {dataset["description"]}')
+    plt.tight_layout()
+    plt.show()
+
+def compare_feature_methods(dataset, test_size=0.3):
+    """Compare different feature extraction methods"""
+    print(f"\nComparing feature extraction methods on {dataset['description']}...")
+    
+    X = dataset['images']
+    y = dataset['target']
+    target_names = dataset['target_names']
+    
+    # Split the data
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=42, stratify=y
+    )
+    
+    methods = ['pixel', 'statistical', 'hog', 'lbp']
+    results = {}
+    
+    for method in methods:
+        print(f"\nTesting {method} features...")
+        try:
+            classifier = ImageClassifierRF(n_estimators=50)  # Reduced for faster testing
+            classifier.train(X_train, y_train, feature_method=method)
+            accuracy, _, _ = classifier.evaluate(X_test, y_test, target_names)
+            results[method] = accuracy
+        except Exception as e:
+            print(f"Error with {method} method: {e}")
+            results[method] = 0
+    
+    return results
+
+def plot_results(results, confusion_matrices=None):
+    """Plot comparison results"""
+    plt.figure(figsize=(15, 5))
+    
+    # Method comparison
+    plt.subplot(1, 2, 1)
+    methods = list(results.keys())
+    accuracies = list(results.values())
+    bars = plt.bar(methods, accuracies)
+    plt.xlabel('Feature Extraction Method')
+    plt.ylabel('Accuracy')
+    plt.title('Feature Method Comparison')
+    plt.ylim(0, 1)
+    
+    # Add value labels on bars
+    for bar, acc in zip(bars, accuracies):
+        plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                f'{acc:.3f}', ha='center', va='bottom')
+    
+    # Feature importance (if available)
+    plt.subplot(1, 2, 2)
+    if len(results) > 0:
+        best_method = max(results, key=results.get)
+        plt.text(0.5, 0.5, f'Best Method:\n{best_method}\nAccuracy: {results[best_method]:.3f}',
+                ha='center', va='center', transform=plt.gca().transAxes,
+                fontsize=14, bbox=dict(boxstyle='round', facecolor='lightblue'))
+        plt.axis('off')
+        plt.title('Best Performing Method')
+    
+    plt.tight_layout()
+    plt.show()
+
+def hyperparameter_tuning(X_train, y_train, feature_method='pixel'):
+    """Perform hyperparameter tuning for Random Forest"""
+    print("Performing hyperparameter tuning...")
+    
+    classifier = ImageClassifierRF()
+    X_train_features = classifier.extract_features(X_train, feature_method)
+    X_train_scaled = classifier.scaler.fit_transform(X_train_features)
+    
+    # Define parameter grid
+    param_grid = {
+        'n_estimators': [50, 100, 200],
+        'max_depth': [None, 10, 20],
+        'min_samples_split': [2, 5, 10],
+        'min_samples_leaf': [1, 2, 4]
+    }
+    
+    # Perform grid search
+    rf = RandomForestClassifier(random_state=42, n_jobs=-1)
+    grid_search = GridSearchCV(rf, param_grid, cv=3, scoring='accuracy', n_jobs=-1)
+    grid_search.fit(X_train_scaled, y_train)
+    
+    print(f"Best parameters: {grid_search.best_params_}")
+    print(f"Best cross-validation score: {grid_search.best_score_:.4f}")
+    
+    return grid_search.best_params_
+
+def load_custom_images(folder_path, target_size=(64, 64)):
+    """Load custom images from folder structure"""
+    images = []
+    labels = []
+    class_names = []
+    
+    if not os.path.exists(folder_path):
+        print(f"Folder {folder_path} does not exist")
+        return None, None, None
+    
+    # Get class folders
+    for class_name in os.listdir(folder_path):
+        class_path = os.path.join(folder_path, class_name)
+        if os.path.isdir(class_path):
+            class_names.append(class_name)
+            class_idx = len(class_names) - 1
+            
+            # Load images from this class
+            for img_file in os.listdir(class_path):
+                if img_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
+                    img_path = os.path.join(class_path, img_file)
+                    try:
+                        img = Image.open(img_path).convert('L')  # Convert to grayscale
+                        img = img.resize(target_size)
+                        img_array = np.array(img) / 255.0  # Normalize
+                        images.append(img_array)
+                        labels.append(class_idx)
+                    except Exception as e:
+                        print(f"Error loading {img_path}: {e}")
+    
+    if len(images) == 0:
+        print("No images found")
+        return None, None, None
+    
+    return np.array(images), np.array(labels), class_names
+
+def main_demonstration():
+    """Main demonstration of the image classification pipeline"""
+    print("="*60)
+    print("IMAGE CLASSIFICATION WITH RANDOM FOREST")
+    print("="*60)
+    
+    # Load sample datasets
+    datasets = load_sample_datasets()
+    
+    # Demonstrate on digits dataset
+    if 'digits' in datasets:
+        dataset = datasets['digits']
+        print(f"\nWorking with: {dataset['description']}")
+        
+        # Visualize sample images
+        visualize_sample_images(dataset)
+        
+        # Compare feature extraction methods
+        results = compare_feature_methods(dataset)
+        
+        # Plot results
+        plot_results(results)
+        
+        # Detailed analysis with best method
+        best_method = max(results, key=results.get)
+        print(f"\nDetailed analysis with best method: {best_method}")
+        
+        X = dataset['images']
+        y = dataset['target']
+        target_names = dataset['target_names']
+        
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.3, random_state=42, stratify=y
+        )
+        
+        # Train with best method
+        classifier = ImageClassifierRF(n_estimators=100)
+        classifier.train(X_train, y_train, feature_method=best_method, use_pca=True, n_components=50)
+        
+        # Evaluate
+        accuracy, predictions, probabilities = classifier.evaluate(X_test, y_test, target_names)
+        
+        # Show confusion matrix
+        cm = confusion_matrix(y_test, predictions)
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                   xticklabels=target_names, yticklabels=target_names)
+        plt.title(f'Confusion Matrix - {best_method} features')
+        plt.xlabel('Predicted')
+        plt.ylabel('Actual')
+        plt.show()
+        
+        # Feature importance
+        importance_df = classifier.get_feature_importance()
+        print(f"\nTop 10 most important features:")
+        print(importance_df.head(10))
+
+def classify_custom_images(folder_path):
+    """Classify custom images from a folder structure"""
+    print(f"Loading custom images from {folder_path}...")
+    
+    images, labels, class_names = load_custom_images(folder_path)
+    
+    if images is None:
+        print("No images loaded. Please check the folder structure.")
+        return
+    
+    print(f"Loaded {len(images)} images from {len(class_names)} classes")
+    print(f"Classes: {class_names}")
+    
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(
+        images, labels, test_size=0.3, random_state=42, stratify=labels
+    )
+    
+    # Train classifier
+    classifier = ImageClassifierRF(n_estimators=100)
+    classifier.train(X_train, y_train, feature_method='combined')
+    
+    # Evaluate
+    accuracy, predictions, probabilities = classifier.evaluate(X_test, y_test, class_names)
+    
+    return classifier, accuracy
+
+if __name__ == "__main__":
+    # Run main demonstration
+    main_demonstration()
+    
+    # Example of custom dataset classification (uncomment to use)
+    # custom_classifier, custom_accuracy = classify_custom_images('path/to/your/image/folder')
+    
+    print("\n" + "="*60)
+    print("CLASSIFICATION COMPLETE!")
+    print("="*60)
