@@ -1,0 +1,119 @@
+def set_operations(set1, set2):
+    """
+    Calculate union, intersection, and symmetric difference of two sets
+    
+    Args:
+        set1: First set
+        set2: Second set
+    
+    Returns:
+        tuple: (union, intersection, symmetric_difference)
+    """
+    # Union: all elements from both sets (no duplicates)
+    union = set1 | set2  # or set1.union(set2)
+    
+    # Intersection: elements common to both sets
+    intersection = set1 & set2  # or set1.intersection(set2)
+    
+    # Symmetric difference: elements in either set but not in both
+    symmetric_diff = set1 ^ set2  # or set1.symmetric_difference(set2)
+    
+    return union, intersection, symmetric_diff
+
+def display_results(set1, set2):
+    """Display the results in a formatted way"""
+    union, intersection, symmetric_diff = set_operations(set1, set2)
+    
+    print(f"Set A: {set1}")
+    print(f"Set B: {set2}")
+    print("-" * 40)
+    print(f"Union (A ∪ B):                {union}")
+    print(f"Intersection (A ∩ B):         {intersection}")
+    print(f"Symmetric Difference (A Δ B): {symmetric_diff}")
+    print()
+
+# Example 1: Numbers
+print("Example 1 - Number Sets:")
+set_a = {1, 2, 3, 4, 5}
+set_b = {4, 5, 6, 7, 8}
+display_results(set_a, set_b)
+
+# Example 2: Strings
+print("Example 2 - String Sets:")
+fruits1 = {"apple", "banana", "orange", "grape"}
+fruits2 = {"banana", "kiwi", "orange", "mango"}
+display_results(fruits1, fruits2)
+
+# Example 3: Mixed types
+print("Example 3 - Mixed Types:")
+mixed1 = {1, "hello", 3.14, "world"}
+mixed2 = {"hello", 42, 3.14, "python"}
+display_results(mixed1, mixed2)
+
+# Interactive function to create custom sets
+def interactive_set_calculator():
+    """Allow user to input their own sets"""
+    print("\n" + "="*50)
+    print("INTERACTIVE SET CALCULATOR")
+    print("="*50)
+    
+    try:
+        # Get input for first set
+        print("Enter elements for Set A (comma-separated):")
+        input_a = input("Set A: ").strip()
+        set_a = set(x.strip() for x in input_a.split(',') if x.strip())
+        
+        # Get input for second set
+        print("Enter elements for Set B (comma-separated):")
+        input_b = input("Set B: ").strip()
+        set_b = set(x.strip() for x in input_b.split(',') if x.strip())
+        
+        print("\nResults:")
+        display_results(set_a, set_b)
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        print("Please make sure to enter valid comma-separated values.")
+
+# Additional utility functions
+def alternative_methods_demo():
+    """Demonstrate alternative ways to perform set operations"""
+    print("Alternative Methods Demo:")
+    print("-" * 30)
+    
+    set1 = {1, 2, 3, 4}
+    set2 = {3, 4, 5, 6}
+    
+    print(f"Set 1: {set1}")
+    print(f"Set 2: {set2}")
+    print()
+    
+    # Union methods
+    print("Union methods:")
+    print(f"  set1 | set2:           {set1 | set2}")
+    print(f"  set1.union(set2):      {set1.union(set2)}")
+    print()
+    
+    # Intersection methods
+    print("Intersection methods:")
+    print(f"  set1 & set2:               {set1 & set2}")
+    print(f"  set1.intersection(set2):   {set1.intersection(set2)}")
+    print()
+    
+    # Symmetric difference methods
+    print("Symmetric difference methods:")
+    print(f"  set1 ^ set2:                      {set1 ^ set2}")
+    print(f"  set1.symmetric_difference(set2):  {set1.symmetric_difference(set2)}")
+    print()
+    
+    # Difference (bonus operation)
+    print("Difference methods (bonus):")
+    print(f"  set1 - set2:            {set1 - set2}")
+    print(f"  set1.difference(set2):  {set1.difference(set2)}")
+
+# Run demonstrations
+if __name__ == "__main__":
+    alternative_methods_demo()
+    
+    # Uncomment the line below to run the interactive calculator
+    # interactive_set_calculator()
